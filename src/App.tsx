@@ -60,7 +60,7 @@ export default function App() {
   const [results, setResults] = useState<{ [key: string]: string }>({});
   const [error, setError] = useState<string | null>(null);
 
-  if (!API_KEY) {
+  if (!API_KEY || API_KEY === "MISSING_KEY") {
     return (
       <div className="min-h-screen bg-[#050505] text-white flex items-center justify-center p-6 text-center">
         <div className="max-w-md space-y-6 p-12 border border-white/10 rounded-[40px] bg-white/[0.02]">
@@ -68,13 +68,28 @@ export default function App() {
             <Sparkles className="w-8 h-8 text-red-500" />
           </div>
           <h2 className="text-3xl font-bold uppercase tracking-tighter">Configuration Required</h2>
-          <p className="text-white/60 leading-relaxed">
-            The <code className="text-orange-500">GEMINI_API_KEY</code> is missing. 
-            Please create a <code className="bg-white/10 px-2 py-1 rounded">.env</code> file in your project root and add your key.
-          </p>
-          <div className="bg-white/5 p-4 rounded-xl text-left font-mono text-xs text-white/40">
-            GEMINI_API_KEY=your_key_here
+          <div className="space-y-4 text-white/60 leading-relaxed">
+            <p>
+              The <code className="text-orange-500 font-bold">GEMINI_API_KEY</code> is missing or not being picked up by the browser.
+            </p>
+            <div className="text-left bg-black/40 p-6 rounded-2xl border border-white/5 space-y-3">
+              <p className="text-xs font-bold uppercase tracking-widest text-white/40">How to fix:</p>
+              <ol className="text-sm list-decimal list-inside space-y-2">
+                <li>Create a <code className="bg-white/10 px-1 rounded">.env</code> file in your project root.</li>
+                <li>Add <code className="text-orange-500">GEMINI_API_KEY=your_key</code> inside.</li>
+                <li><span className="text-white font-bold underline">Restart</span> your terminal and run <code className="bg-white/10 px-1 rounded">npm run dev</code> again.</li>
+              </ol>
+            </div>
+            <p className="text-xs italic">
+              Note: If you are in the EU or UK, image generation may be restricted for personal API keys.
+            </p>
           </div>
+          <button 
+            onClick={() => window.location.reload()}
+            className="w-full bg-white text-black font-bold py-4 rounded-2xl hover:bg-orange-500 transition-colors uppercase tracking-tighter"
+          >
+            Refresh App
+          </button>
         </div>
       </div>
     );
@@ -152,11 +167,17 @@ export default function App() {
             attempts++;
             console.error(`Attempt ${attempts} failed for ${medium.name}:`, err);
             
-            if (err?.message?.includes('429') || err?.message?.includes('quota')) {
+            const errorMessage = err?.message || String(err);
+            
+            if (errorMessage.includes('429') || errorMessage.includes('quota')) {
+              if (errorMessage.includes('limit: 0')) {
+                setError("Regional Restriction: Image generation is not currently available for personal API keys in your region (e.g., EU/UK).");
+                break;
+              }
               // If it's a rate limit, wait longer before retrying
               await new Promise(resolve => setTimeout(resolve, 5000));
             } else {
-              // For other errors, don't retry
+              setError(`API Error: ${errorMessage}`);
               break;
             }
           }

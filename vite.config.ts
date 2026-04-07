@@ -4,12 +4,16 @@ import path from 'path';
 import {defineConfig, loadEnv} from 'vite';
 
 export default defineConfig(({mode}) => {
-  const env = loadEnv(mode, '.', '');
+  // Load env file from the current directory
+  const env = loadEnv(mode, process.cwd(), '');
+  
   return {
     plugins: [react(), tailwindcss()],
     define: {
+      // This "shims" process.env so the browser doesn't crash
+      'process.env': JSON.stringify(env),
+      // Also explicitly define the key for extra compatibility
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY || ''),
-      'process.env.APP_URL': JSON.stringify(env.APP_URL || 'http://localhost:3000'),
     },
     resolve: {
       alias: {
