@@ -106,43 +106,62 @@ export default function App() {
       const masterSpec = specResponse.text || description;
       console.log("Generated Master Spec:", masterSpec);
 
-      // Step 2: Generate for each medium in parallel using the Master Spec
-      const promises = MEDIUMS.map(async (medium) => {
-        try {
-          // We combine the master spec with the medium-specific environment
-          const fullPrompt = `PRODUCT SPECIFICATION: ${masterSpec}. 
-          ENVIRONMENT: ${medium.promptSuffix}. 
-          CRITICAL: The product in this image MUST be identical in every detail to the PRODUCT SPECIFICATION provided. 
-          Strictly no people or humans in the image. High-end commercial photography style.`;
-          
-          const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash-image',
-            contents: {
-              parts: [{ text: fullPrompt }],
-            },
-            config: {
-              imageConfig: {
-                aspectRatio: medium.aspectRatio,
-              },
-            },
-          });
+      // Step 2: Generate for each medium SEQUENTIALLY to avoid Free Tier concurrency limits
+      for (const medium of MEDIUMS) {
+        let attempts = 0;
+        const maxAttempts = 2;
+        let success = false;
 
-          for (const part of response.candidates?.[0]?.content?.parts || []) {
-            if (part.inlineData) {
-              const imageData = `data:image/png;base64,${part.inlineData.data}`;
-              setResults(prev => ({
-                ...prev,
-                [medium.id]: imageData
-              }));
+        while (attempts < maxAttempts && !success) {
+          try {
+            const fullPrompt = `PRODUCT SPECIFICATION: ${masterSpec}. 
+            ENVIRONMENT: ${medium.promptSuffix}. 
+            CRITICAL: The product in this image MUST be identical in every detail to the PRODUCT SPECIFICATION provided. 
+            Strictly no people or humans in the image. High-end commercial photography style.`;
+            
+            const response = await ai.models.generateContent({
+              model: 'gemini-2.5-flash-image',
+              contents: {
+                parts: [{ text: fullPrompt }],
+              },
+              config: {
+                imageConfig: {
+                  aspectRatio: medium.aspectRatio,
+                },
+              },
+            });
+
+            for (const part of response.candidates?.[0]?.content?.parts || []) {
+              if (part.inlineData) {
+                const imageData = `data:image/png;base64,${part.inlineData.data}`;
+                setResults(prev => ({
+                  ...prev,
+                  [medium.id]: imageData
+                }));
+                success = true;
+                break;
+              }
+            }
+            
+            // Small delay between successful generations to respect RPM
+            if (success) {
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+
+          } catch (err: any) {
+            attempts++;
+            console.error(`Attempt ${attempts} failed for ${medium.name}:`, err);
+            
+            if (err?.message?.includes('429') || err?.message?.includes('quota')) {
+              // If it's a rate limit, wait longer before retrying
+              await new Promise(resolve => setTimeout(resolve, 5000));
+            } else {
+              // For other errors, don't retry
               break;
             }
           }
-        } catch (err) {
-          console.error(`Error generating ${medium.name}:`, err);
         }
-      });
-
-      await Promise.allSettled(promises);
+      }
       
       setResults(currentResults => {
         if (Object.keys(currentResults).length === 0) {
