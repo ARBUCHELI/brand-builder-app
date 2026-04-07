@@ -64,38 +64,75 @@ export default function App() {
 
     setIsGenerating(true);
     setError(null);
-    const newResults: { [key: string]: string } = {};
+    setResults({});
 
     try {
-      // Generate for each medium
-      const promises = MEDIUMS.map(async (medium) => {
-        const fullPrompt = `${description}. ${medium.promptSuffix}. Ensure the product looks consistent across shots. Strictly no people or humans in the image.`;
+      // Step 1: Generate a "Master Visual Specification" to ensure consistency
+      // We use a text model to expand the user's description into a highly detailed visual spec
+      const specResponse = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `Create a highly detailed, technical visual specification for a product based on this description: "${description}". 
+        Focus on: 
+        - Exact materials and textures (e.g., brushed aluminum, matte polycarbonate)
+        - Precise colors and finishes (e.g., Midnight Black with #C0C0C0 silver accents)
+        - Specific geometric details and proportions
+        - Branding/logo placement style (if any)
+        - Lighting behavior on the surfaces
         
-        const response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash-image',
-          contents: {
-            parts: [{ text: fullPrompt }],
-          },
-          config: {
-            imageConfig: {
-              aspectRatio: medium.aspectRatio,
-            },
-          },
-        });
+        Keep it concise but extremely descriptive. This spec will be used to generate consistent images of the product in different environments. Do not include any people in the description.`,
+      });
 
-        for (const part of response.candidates?.[0]?.content?.parts || []) {
-          if (part.inlineData) {
-            newResults[medium.id] = `data:image/png;base64,${part.inlineData.data}`;
-            break;
+      const masterSpec = specResponse.text || description;
+      console.log("Generated Master Spec:", masterSpec);
+
+      // Step 2: Generate for each medium in parallel using the Master Spec
+      const promises = MEDIUMS.map(async (medium) => {
+        try {
+          // We combine the master spec with the medium-specific environment
+          const fullPrompt = `PRODUCT SPECIFICATION: ${masterSpec}. 
+          ENVIRONMENT: ${medium.promptSuffix}. 
+          CRITICAL: The product in this image MUST be identical in every detail to the PRODUCT SPECIFICATION provided. 
+          Strictly no people or humans in the image. High-end commercial photography style.`;
+          
+          const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash-image',
+            contents: {
+              parts: [{ text: fullPrompt }],
+            },
+            config: {
+              imageConfig: {
+                aspectRatio: medium.aspectRatio,
+              },
+            },
+          });
+
+          for (const part of response.candidates?.[0]?.content?.parts || []) {
+            if (part.inlineData) {
+              const imageData = `data:image/png;base64,${part.inlineData.data}`;
+              setResults(prev => ({
+                ...prev,
+                [medium.id]: imageData
+              }));
+              break;
+            }
           }
+        } catch (err) {
+          console.error(`Error generating ${medium.name}:`, err);
         }
       });
 
-      await Promise.all(promises);
-      setResults(newResults);
+      await Promise.allSettled(promises);
+      
+      setResults(currentResults => {
+        if (Object.keys(currentResults).length === 0) {
+          setError("Failed to generate any images. Please try again.");
+        }
+        return currentResults;
+      });
+
     } catch (err) {
-      console.error("Generation error:", err);
-      setError("Failed to generate images. Please try again.");
+      console.error("Critical generation error:", err);
+      setError("A critical error occurred. Please try again.");
     } finally {
       setIsGenerating(false);
     }
