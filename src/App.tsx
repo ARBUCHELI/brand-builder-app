@@ -19,7 +19,8 @@ import {
 } from "lucide-react";
 
 // Initialize Gemini API
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const API_KEY = process.env.GEMINI_API_KEY;
+const ai = new GoogleGenAI({ apiKey: API_KEY || "MISSING_KEY" });
 
 type Medium = {
   id: string;
@@ -58,6 +59,26 @@ export default function App() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [results, setResults] = useState<{ [key: string]: string }>({});
   const [error, setError] = useState<string | null>(null);
+
+  if (!API_KEY) {
+    return (
+      <div className="min-h-screen bg-[#050505] text-white flex items-center justify-center p-6 text-center">
+        <div className="max-w-md space-y-6 p-12 border border-white/10 rounded-[40px] bg-white/[0.02]">
+          <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto">
+            <Sparkles className="w-8 h-8 text-red-500" />
+          </div>
+          <h2 className="text-3xl font-bold uppercase tracking-tighter">Configuration Required</h2>
+          <p className="text-white/60 leading-relaxed">
+            The <code className="text-orange-500">GEMINI_API_KEY</code> is missing. 
+            Please create a <code className="bg-white/10 px-2 py-1 rounded">.env</code> file in your project root and add your key.
+          </p>
+          <div className="bg-white/5 p-4 rounded-xl text-left font-mono text-xs text-white/40">
+            GEMINI_API_KEY=your_key_here
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const generateImages = async () => {
     if (!description.trim()) return;
